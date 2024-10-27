@@ -1,202 +1,81 @@
-# Import các thư viện cần thiết
-import cv2              # Xử lý ảnh
-import numpy as np      # Tính toán số học
-from tkinter import Tk, Button, Label, filedialog, Frame, StringVar  # Tạo giao diện
-from PIL import Image, ImageTk   # Xử lý và hiển thị ảnh trong Tkinter
+import cv2                # Thư viện xử lý ảnh OpenCV
+import numpy as np        # Thư viện xử lý toán học, hỗ trợ mảng lớn
 
-# Lớp chính để xử lý ảnh và tạo giao diện
-class ImageProcessingApp:
-    def __init__(self, root):
-        # Cấu hình cửa sổ chính
-        self.root = root
-        self.root.title("010100086901-XỬ LÝ ẢNH VÀ THỊ GIÁC MÁY TÍNH-NHÓM 9")
-        self.root.configure(bg='#e6f7ff')      # Đặt màu nền xanh nhạt
-        self.root.resizable(True, True)        # Cho phép thay đổi kích thước
-        self.root.geometry("1200x600")         # Kích thước mặc định
+# Hàm otsu_threshold: Tìm ngưỡng tối ưu dựa trên phương pháp Otsu
+def otsu_threshold(image):
+    # Tính histogram và xác suất xuất hiện của mỗi mức xám
+    hist, bins = np.histogram(image.flatten(), 256, [0, 256])  # Đếm số pixel cho mỗi mức xám
+    total_pixels = image.size                                   # Tổng số pixel trong ảnh
+    p = hist / total_pixels                                     # Xác suất của mỗi mức xám
 
-        # Khởi tạo biến để lưu trữ
-        self.original_image = StringVar()       # Lưu đường dẫn ảnh gốc
-        self.processed_title = StringVar()      # Lưu tiêu đề ảnh đã xử lý
+    # Tính moment tổng của ảnh và khởi tạo các biến hỗ trợ
+    mg = np.dot(np.arange(256), p)      # Giá trị trung bình tổng của ảnh
+    max_between_class_variance = 0      # Biến lưu phương sai lớn nhất giữa các lớp
+    threshold_value = 0                 # Ngưỡng tối ưu
+    m1 = m2 = 0                         # Trung bình của hai lớp (được cập nhật khi tìm ngưỡng tối ưu)
+    weight_A = 0                        # Trọng số của lớp A (lớp tối)
+    sum_A = 0                           # Tích lũy trung bình cho lớp A
 
-        # Thiết lập giao diện
-        self.setup_gui()
+    # Tìm ngưỡng tối ưu bằng cách thử từng mức xám từ 0 đến 255
+    for k in range(256):
+        weight_A += p[k]                # Cộng dồn xác suất để tính trọng số của lớp A
+        if weight_A == 0:
+            continue                    # Nếu lớp A chưa có pixel nào, bỏ qua
+        weight_B = 1 - weight_A         # Trọng số của lớp B (lớp sáng)
+        if weight_B == 0:
+            break                       # Nếu không còn pixel nào cho lớp B, dừng lại
 
-    def setup_gui(self):
-        # Tạo khung chứa chính
-        main_container = Frame(self.root, bg='#e6f7ff')
-        main_container.pack(expand=True, fill='both', padx=20, pady=20)
+        # Cập nhật trung bình của lớp A và B
+        sum_A += k * p[k]
+        mean_A = sum_A / weight_A if weight_A != 0 else 0      # Trung bình của lớp A
+        mean_B = (mg - sum_A) / weight_B if weight_B != 0 else 0  # Trung bình của lớp B
 
-        # Thiết lập các thành phần giao diện
-        self.setup_titles(main_container)        # Phần tiêu đề
-        self.create_button_panel(main_container) # Phần nút bấm
-        self.create_image_panel(main_container)  # Phần hiển thị ảnh
+        # Tính phương sai giữa hai lớp tại ngưỡng k
+        between_class_variance = weight_A * weight_B * (mean_A - mean_B) ** 2
 
-    def setup_titles(self, parent):
-        # Tạo khung chứa tiêu đề
-        title_frame = Frame(parent, bg='#e6f7ff')
-        title_frame.pack(fill='x', pady=(0, 20))
+        # Cập nhật ngưỡng tối ưu nếu phương sai giữa các lớp lớn hơn
+        if between_class_variance > max_between_class_variance:
+            max_between_class_variance = between_class_variance
+            threshold_value = k         # Lưu lại ngưỡng k là ngưỡng tối ưu
+            m1 = mean_A                 # Lưu trung bình của lớp A
+            m2 = mean_B                 # Lưu trung bình của lớp B
+    return threshold_value, mg, m1, m2  # Trả về ngưỡng tối ưu và các giá trị trung bình
 
-        # Tiêu đề chính - màu đỏ
-        main_title = Label(title_frame,
-                          text="XỬ LÝ ẢNH VÀ THỊ GIÁC MÁY TÍNH",
-                          bg='#e6f7ff',
-                          fg='#FF0000',
-                          font=("Time New Romans", 28, 'bold'))
-        main_title.pack()
+# Hàm global_mean_threshold: Tính ngưỡng dựa trên trung bình toàn cục của ảnh
+def global_mean_threshold(image):
+    return np.mean(image)               # Trung bình tất cả các pixel trong ảnh
 
-        # Tiêu đề phụ - màu đỏ
-        sub_title = Label(title_frame,
-                         text="NHÓM 9",
-                         bg='#e6f7ff',
-                         fg='#FF0000',
-                         font=("Arial", 28, 'bold'))
-        sub_title.pack(pady=(5, 0))
+# Hàm multi_threshold: Tìm hai ngưỡng tối ưu để phân ảnh thành ba vùng
+def multi_threshold(image):
+    # Tính histogram của ảnh
+    histogram, _ = np.histogram(image, bins=256, range=(0, 256))  # Đếm số pixel cho mỗi mức xám
+    total_pixels = image.size
+    max_variance = 0                       # Biến lưu phương sai lớn nhất giữa các lớp
+    best_thresholds = (0, 0)               # Lưu hai ngưỡng tối ưu
 
-    def create_button_panel(self, parent):
-        # Tạo khung chứa các nút
-        button_frame = Frame(parent, bg='#e6f7ff')
-        button_frame.pack(fill='x', pady=(0, 20))
+    # Duyệt qua các giá trị ngưỡng t1 và t2 để tìm cặp ngưỡng tối ưu
+    for t1 in range(1, 255):
+        for t2 in range(t1 + 40, 256):     # t2 phải lớn hơn t1 ít nhất 40 để có khoảng cách
+            # Tính trọng số của từng lớp
+            w1 = np.sum(histogram[:t1])    # Trọng số lớp 1 (0 -> t1-1)
+            w2 = np.sum(histogram[t1:t2])  # Trọng số lớp 2 (t1 -> t2-1)
+            w3 = total_pixels - w1 - w2    # Trọng số lớp 3 (t2 -> 255)
 
-        # Định nghĩa các nút: (tên, lệnh, màu nền)
-        buttons = [
-            ("Chọn Hình Ảnh", self.select_image, '#66b3ff'),       # Nút chọn ảnh - màu xanh
-            ("Xử lý Otsu", self.process_images_otsu, '#ffb3b3'),   # Nút xử lý Otsu - màu hồng
-        ]
+            if w1 == 0 or w2 == 0 or w3 == 0:
+                continue                    # Bỏ qua nếu lớp nào không có pixel
 
-        # Tạo và thêm các nút vào giao diện
-        for text, command, color in buttons:
-            btn = Button(button_frame, text=text, command=command,
-                        bg=color, fg='white', font=("Arial", 19, 'bold'),
-                        width=15, height=2)
-            btn.pack(side='left', padx=5)
+            # Tính trung bình của từng lớp
+            m1 = np.sum(np.arange(t1) * histogram[:t1]) / w1  # Trung bình lớp 1
+            m2 = np.sum(np.arange(t1, t2) * histogram[t1:t2]) / w2  # Trung bình lớp 2
+            m3 = np.sum(np.arange(t2, 256) * histogram[t2:]) / w3  # Trung bình lớp 3
 
-    def create_image_panel(self, parent):
-        # Tạo container chứa ảnh gốc và ảnh đã xử lý
-        self.image_container = Frame(parent, bg='#e6f7ff')
-        self.image_container.pack(expand=True, fill='both')
-
-        # Panel ảnh gốc (bên trái)
-        original_frame = Frame(self.image_container, bg='#e6f7ff')
-        original_frame.grid(row=0, column=0, padx=20, pady=20)
-        self.original_title = Label(original_frame, text="", bg='#e6f7ff',
-                                  fg='#FF0000', font=("Arial", 26, 'bold'))
-        self.original_title.pack(pady=(0, 10))
-        self.original_label = Label(original_frame, bg='#e6f7ff')
-        self.original_label.pack()
-
-        # Panel ảnh đã xử lý (bên phải)
-        processed_frame = Frame(self.image_container, bg='#e6f7ff')
-        processed_frame.grid(row=0, column=1, padx=20, pady=20)
-        self.processed_title_label = Label(processed_frame,
-                                         textvariable=self.processed_title,
-                                         bg='#e6f7ff', fg='#FF0000',
-                                         font=("Arial", 26, 'bold'))
-        self.processed_title_label.pack(pady=(0, 10))
-        self.processed_label = Label(processed_frame, bg='#e6f7ff')
-        self.processed_label.pack()
-
-    def select_image(self):
-        # Mở hộp thoại chọn file ảnh
-        file_path = filedialog.askopenfilename(
-            filetypes=[("Image files", "*.jpg *.jpeg *.png *.bmp *.gif *.tiff")])
-        if file_path:
-            # Cập nhật và hiển thị ảnh đã chọn
-            self.original_image.set(file_path)
-            self.load_and_display_original(file_path)
-            self.original_title.config(text="Ảnh Gốc")
-            # Xóa ảnh đã xử lý trước đó
-            self.processed_label.config(image='')
-            self.processed_title.set('')
-
-    def load_and_display_original(self, file_path):
-        # Đọc ảnh dưới dạng ảnh xám
-        img = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
-        if img is not None:
-            # Tính toán kích thước mới giữ nguyên tỷ lệ
-            height, width = img.shape
-            max_size = 600  # Kích thước tối đa cho phép
-            ratio = min(max_size / width, max_size / height)
-            new_size = (int(width * ratio), int(height * ratio))
-
-            # Resize và hiển thị ảnh
-            resized_img = cv2.resize(img, new_size)
-            photo = ImageTk.PhotoImage(image=Image.fromarray(resized_img))
-            self.original_label.config(image=photo)
-            self.original_label.image = photo
-
-    def display_processed_image(self, processed_img, title, max_size=600):
-        # Tính toán kích thước mới giữ nguyên tỷ lệ
-        height, width = processed_img.shape
-        ratio = min(max_size / width, max_size / height)
-        new_size = (int(width * ratio), int(height * ratio))
-
-        # Resize và hiển thị ảnh đã xử lý
-        resized = cv2.resize(processed_img, new_size)
-        photo = ImageTk.PhotoImage(image=Image.fromarray(resized))
-        self.processed_label.config(image=photo)
-        self.processed_label.image = photo
-        self.processed_title.set(title)
-
-    def process_images_otsu(self):
-        # Kiểm tra xem đã có ảnh được chọn chưa
-        if not self.original_image.get():
-            return
-        # Đọc ảnh xám và xử lý
-        img_array = cv2.imread(self.original_image.get(), cv2.IMREAD_GRAYSCALE)
-        if img_array is not None:
-            # Tính ngưỡng Otsu và phân ngưỡng ảnh
-            threshold_value = self.otsu_threshold(img_array)[0]
-            processed = (img_array >= threshold_value).astype(np.uint8) * 255
-            # Hiển thị kết quả
-            self.display_processed_image(processed, "Xử lý Otsu")
-
-    def otsu_threshold(self, image):
-        # Thuật toán Otsu để tìm ngưỡng tối ưu
-        # Bước 1: Tính histogram
-        hist, bins = np.histogram(image.flatten(), 256, [0, 256])
-        total_pixels = image.size
-        p = hist / total_pixels
-
-        # Bước 2: Tính moment tích lũy bậc 0 và 1
-        mg = np.dot(np.arange(256), p)
-        max_between_class_variance = 0
-        threshold_value = 0
-        m1 = m2 = 0
-        weight_A = 0
-        sum_A = 0
-
-        # Bước 3: Tìm ngưỡng tối ưu
-        for k in range(256):
-            # Tính trọng số của 2 lớp
-            weight_A += p[k]
-            if weight_A == 0:
-                continue
-            weight_B = 1 - weight_A
-            if weight_B == 0:
-                break
-
-            # Tính giá trị trung bình của 2 lớp
-            sum_A += k * p[k]
-            mean_A = sum_A / weight_A if weight_A != 0 else 0
-            mean_B = (mg - sum_A) / weight_B if weight_B != 0 else 0
-
-            # Tính phương sai giữa 2 lớp
-            between_class_variance = weight_A * weight_B * (mean_A - mean_B) ** 2
+            # Tính phương sai giữa các lớp
+            variance_between = (w1 * (m1 - (w1 + w2 + w3) / total_pixels) ** 2 +
+                                w2 * (m2 - (w1 + w2 + w3) / total_pixels) ** 2 +
+                                w3 * (m3 - (w1 + w2 + w3) / total_pixels) ** 2)
 
             # Cập nhật ngưỡng nếu tìm được phương sai lớn hơn
-            if between_class_variance > max_between_class_variance:
-                max_between_class_variance = between_class_variance
-                threshold_value = k
-                m1 = mean_A
-                m2 = mean_B
-        return threshold_value, mg, m1, m2
-
-# Hàm main để khởi chạy ứng dụng
-def main():
-    root = Tk()
-    app = ImageProcessingApp(root)
-    root.mainloop()
-
-# Chạy chương trình khi file được thực thi trực tiếp
-if __name__ == '__main__':
-    main()
+            if variance_between > max_variance:
+                max_variance = variance_between
+                best_thresholds = (t1, t2)  # Lưu cặp ngưỡng tối ưu
+    return best_thresholds                 # Trả về hai ngưỡng tối ưu
