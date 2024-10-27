@@ -10,11 +10,11 @@ class ImageProcessingApp:
         # Cấu hình cửa sổ chính
         self.root = root
         self.root.title("010100086901-XỬ LÝ ẢNH VÀ THỊ GIÁC MÁY TÍNH-NHÓM 9")
-        self.root.configure(bg='#e6f7ff')      # Màu nền xanh nhạt
+        self.root.configure(bg='#e6f7ff')      # Đặt màu nền xanh nhạt
         self.root.resizable(True, True)        # Cho phép thay đổi kích thước
         self.root.geometry("1200x600")         # Kích thước mặc định
 
-        # Khởi tạo biến
+        # Khởi tạo biến để lưu trữ
         self.original_image = StringVar()       # Lưu đường dẫn ảnh gốc
         self.processed_title = StringVar()      # Lưu tiêu đề ảnh đã xử lý
 
@@ -40,7 +40,7 @@ class ImageProcessingApp:
         main_title = Label(title_frame,
                           text="XỬ LÝ ẢNH VÀ THỊ GIÁC MÁY TÍNH",
                           bg='#e6f7ff',
-                          fg='#FF0000',  # Màu chữ đỏ
+                          fg='#FF0000',
                           font=("Time New Romans", 28, 'bold'))
         main_title.pack()
 
@@ -48,7 +48,7 @@ class ImageProcessingApp:
         sub_title = Label(title_frame,
                          text="NHÓM 9",
                          bg='#e6f7ff',
-                         fg='#FF0000',  # Màu chữ đỏ
+                         fg='#FF0000',
                          font=("Arial", 28, 'bold'))
         sub_title.pack(pady=(5, 0))
 
@@ -59,18 +59,15 @@ class ImageProcessingApp:
 
         # Định nghĩa các nút: (tên, lệnh, màu nền)
         buttons = [
-            ("Chọn Hình Ảnh", self.select_image, '#66b3ff'),         # Nút chọn ảnh - màu xanh
-            ("Xử lý Otsu", self.process_images_otsu, '#ffb3b3'),     # Nút Otsu
-            ("Xử lý Global Mean", self.process_images_global_mean, '#ffb3b3'),  # Nút Global Mean
-            ("Xử lý Đa ngưỡng", self.process_images_multi_threshold, '#ffb3b3'),# Nút Multi-threshold
-            ("Xử lý Tất Cả", self.process_all_images, '#ffb3b3')     # Nút xử lý tất cả
+            ("Chọn Hình Ảnh", self.select_image, '#66b3ff'),       # Nút chọn ảnh - màu xanh
+            ("Xử lý Otsu", self.process_images_otsu, '#ffb3b3'),   # Nút xử lý Otsu - màu hồng
         ]
 
         # Tạo và thêm các nút vào giao diện
         for text, command, color in buttons:
             btn = Button(button_frame, text=text, command=command,
-                         bg=color, fg='white', font=("Arial", 19, 'bold'),
-                         width=15, height=2)
+                        bg=color, fg='white', font=("Arial", 19, 'bold'),
+                        width=15, height=2)
             btn.pack(side='left', padx=5)
 
     def create_image_panel(self, parent):
@@ -153,73 +150,6 @@ class ImageProcessingApp:
             # Hiển thị kết quả
             self.display_processed_image(processed, "Xử lý Otsu")
 
-    def process_images_global_mean(self):
-        # Kiểm tra xem đã có ảnh được chọn chưa
-        if not self.original_image.get():
-            return
-        # Đọc và xử lý ảnh bằng phương pháp Global Mean
-        img_array = cv2.imread(self.original_image.get(), cv2.IMREAD_GRAYSCALE)
-        if img_array is not None:
-            # Tính ngưỡng là giá trị trung bình của ảnh
-            threshold = np.mean(img_array)
-            processed = (img_array >= threshold).astype(np.uint8) * 255
-            # Hiển thị kết quả
-            self.display_processed_image(processed, "Xử lý Global Mean")
-
-    def process_images_multi_threshold(self):
-        # Kiểm tra xem đã có ảnh được chọn chưa
-        if not self.original_image.get():
-            return
-        # Đọc và xử lý ảnh bằng phương pháp đa ngưỡng
-        img_array = cv2.imread(self.original_image.get(), cv2.IMREAD_GRAYSCALE)
-        if img_array is not None:
-            # Tính hai ngưỡng và phân ảnh thành 3 vùng
-            t1, t2 = self.multi_threshold(img_array)
-            processed = np.zeros(img_array.shape, dtype=np.uint8)
-            processed[img_array < t1] = 85          # Vùng tối
-            processed[(img_array >= t1) & (img_array < t2)] = 170  # Vùng trung bình
-            processed[img_array >= t2] = 255        # Vùng sáng
-            # Hiển thị kết quả
-            self.display_processed_image(processed, "Xử lý Đa ngưỡng")
-
-    def process_all_images(self):
-        # Kiểm tra xem đã có ảnh được chọn chưa
-        if not self.original_image.get():
-            return
-        # Đọc ảnh xám
-        img_array = cv2.imread(self.original_image.get(), cv2.IMREAD_GRAYSCALE)
-        if img_array is not None:
-            # Tạo ảnh kết quả với khoảng trắng giữa các ảnh
-            height, width = img_array.shape
-            spacing = 20  # Khoảng cách giữa các ảnh
-            combined_result = np.zeros((height, width * 3 + spacing * 2), dtype=np.uint8)
-            combined_result.fill(255)  # Đặt nền trắng
-
-            # Xử lý Otsu
-            threshold_value = self.otsu_threshold(img_array)[0]
-            otsu_result = (img_array >= threshold_value).astype(np.uint8) * 255
-            combined_result[:, 0:width] = otsu_result
-
-            # Xử lý Global Mean
-            threshold = np.mean(img_array)
-            global_mean_result = (img_array >= threshold).astype(np.uint8) * 255
-            combined_result[:, width + spacing:2 * width + spacing] = global_mean_result
-
-            # Xử lý Multi-threshold
-            t1, t2 = self.multi_threshold(img_array)
-            multi_result = np.zeros(img_array.shape, dtype=np.uint8)
-            multi_result[img_array < t1] = 85
-            multi_result[(img_array >= t1) & (img_array < t2)] = 170
-            multi_result[img_array >= t2] = 255
-            combined_result[:, 2 * width + 2 * spacing:] = multi_result
-
-            # Hiển thị kết quả với kích thước lớn
-            self.display_processed_image(
-                combined_result,
-                "Kết quả: Otsu (trái) | Global Mean (giữa) | Multi-threshold (phải)",
-                max_size=1200  # Tăng kích thước hiển thị cho ảnh tổng hợp
-            )
-
     def otsu_threshold(self, image):
         # Thuật toán Otsu để tìm ngưỡng tối ưu
         # Bước 1: Tính histogram
@@ -261,47 +191,12 @@ class ImageProcessingApp:
                 m2 = mean_B
         return threshold_value, mg, m1, m2
 
-    def multi_threshold(self, image):
-        # Thuật toán tìm đa ngưỡng
-        # Bước 1: Tính histogram
-        histogram, _ = np.histogram(image, bins=256, range=(0, 256))
-        total_pixels = image.size
-        max_variance = 0
-        best_thresholds = (0, 0)
-
-        # Bước 2: Tìm 2 ngưỡng tối ưu
-        for t1 in range(1, 255):
-            for t2 in range(t1 + 40, 256): # t2 phải lớn hơn t1 ít nhất 40 đơn vị
-                # Tính trọng số của 3 lớp
-                w1 = np.sum(histogram[:t1])     # Lớp 1: 0 -> t1-1
-                w2 = np.sum(histogram[t1:t2])   # Lớp 2: t1 -> t2-1
-                w3 = total_pixels - w1 - w2     # Lớp 3: t2 -> 255
-
-                # Kiểm tra điều kiện hợp lệ
-                if w1 == 0 or w2 == 0 or w3 == 0:
-                    continue
-                # Tính giá trị trung bình của 3 lớp
-                m1 = np.sum(np.arange(t1) * histogram[:t1]) / w1
-                m2 = np.sum(np.arange(t1, t2) * histogram[t1:t2]) / w2
-                m3 = np.sum(np.arange(t2, 256) * histogram[t2:]) / w3
-
-                # Tính phương sai giữa các lớp
-                variance_between = (w1 * (m1 - (w1 + w2 + w3) / total_pixels) ** 2 +
-                                    w2 * (m2 - (w1 + w2 + w3) / total_pixels) ** 2 +
-                                    w3 * (m3 - (w1 + w2 + w3) / total_pixels) ** 2)
-
-                # Cập nhật ngưỡng nếu tìm được phương sai lớn hơn
-                if variance_between > max_variance:
-                    max_variance = variance_between
-                    best_thresholds = (t1, t2)
-        return best_thresholds
-
 # Hàm main để khởi chạy ứng dụng
 def main():
-    # Khởi tạo cửa sổ chính và chạy ứng dụng
     root = Tk()
     app = ImageProcessingApp(root)
     root.mainloop()
+
 # Chạy chương trình khi file được thực thi trực tiếp
 if __name__ == '__main__':
     main()
