@@ -52,9 +52,4 @@
 | TC-41 | Permission error | Kiểm tra lỗi quyền truy cập | Server đang chạy | 1. Lưu file vào thư mục không có quyền | Thông báo lỗi permission |
 | TC-42 | Recovery | Kiểm tra khôi phục sau lỗi | Xảy ra lỗi | 1. Thử lại operation | Hệ thống hoạt động lại bình thường |
 
-| **X. Kiểm tra bảo mật** |
-| TC-43 | File validation | Kiểm tra validate file | Client đã kết nối | 1. Gửi file độc hại | File bị từ chối |
-| TC-44 | Connection security | Kiểm tra bảo mật kết nối | Server đang chạy | 1. Scan các port | Chỉ port được chỉ định mở |
-| TC-45 | Access control | Kiểm tra phân quyền | Nhiều client kết nối | 1. Client thử truy cập file khác | Từ chối truy cập trái phép |
-| TC-46 | DOS protection | Kiểm tra chống DOS | Server đang chạy | 1. Tạo nhiều kết nối/request | Server không bị quá tải |
 
